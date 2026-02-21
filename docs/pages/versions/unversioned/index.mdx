@@ -1,128 +1,1646 @@
----
-title: Reference
-hideTOC: true
----
+// ============================================================
+// CryptoSupport Quick Response Library -- v2.0
+// NEW: ⭐ Favourites | 📝 Custom Templates | 📋 Placeholder Filler
+//      ⛓️ Blockchain TX Checker | 🔍 Zendesk Lookup | 💹 Live Prices
+// Paste entire file into snack.expo.dev as App.js
+// ============================================================
 
-import { BookOpen02Icon } from '@expo/styleguide-icons/outline/BookOpen02Icon';
-
-import { BoxLink } from '~/ui/components/BoxLink';
-import { Collapsible } from '~/ui/components/Collapsible';
-import RedirectNotification from '~/ui/components/RedirectNotification';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  AndroidIOSCompatibilityTable,
-  ReactNativeCompatibilityTable,
-} from '~/ui/components/SDKTables';
-import { Terminal } from '~/ui/components/Snippet';
-import { CODE } from '~/ui/components/Text';
+  View, Text, TextInput, TouchableOpacity, FlatList,
+  ScrollView, Modal, StyleSheet, StatusBar,
+  KeyboardAvoidingView, Platform, Alert, Clipboard,
+  SafeAreaView, ActivityIndicator, Dimensions,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-<RedirectNotification>
-  The page you are looking for does not exist in this SDK version. It may have been deprecated or
-  added to a newer SDK version.
-</RedirectNotification>
+// ─── THEME ────────────────────────────────────────────────
+const C = {
+  bg: '#0a0f1e', card: '#131f35', border: '#1e3a5f',
+  header: '#0d1a3a', accent: '#00c48c', accentDim: 'rgba(0,196,140,0.14)',
+  warn: '#f59e0b', warnDim: 'rgba(245,158,11,0.12)',
+  blue: '#60a5fa', blueDim: 'rgba(96,165,250,0.12)',
+  purple: '#a78bfa', red: '#ef4444', pink: '#f472b6',
+  green: '#4ade80', orange: '#fb923c',
+  t1: '#e2e8f0', t2: '#94a3b8', t3: '#475569',
+  white: '#ffffff', inputBg: '#0d1628',
+};
 
-The Expo SDK provides access to device and system functionality such as contacts, camera, gyroscope, GPS location, and so on, in the form of packages. You can install any Expo SDK package using the `npx expo install` command. For example, three different packages are installed using the following command:
+// ─── STORAGE KEYS ─────────────────────────────────────────
+const K = {
+  log: '@cs_log_v2',
+  settings: '@cs_settings_v2',
+  favourites: '@cs_favs_v1',
+  customTemplates: '@cs_custom_v1',
+};
 
-<Terminal cmd={['$ npx expo install expo-camera expo-contacts expo-sensors']} />
+// ─── STORAGE HELPERS ──────────────────────────────────────
+const store = {
+  get: async (key, fallback = null) => {
+    try { const d = await AsyncStorage.getItem(key); return d ? JSON.parse(d) : fallback; }
+    catch { return fallback; }
+  },
+  set: async (key, val) => {
+    try { await AsyncStorage.setItem(key, JSON.stringify(val)); } catch {}
+  },
+};
 
-After installing one or more packages, you can import them into your JavaScript code:
+// ─── BUILT-IN TEMPLATES DATA ──────────────────────────────
+const STATUS_OPTIONS = ['Used', 'Needs Modification', 'Partially Used', 'Pending Review'];
+const STATUS_COLORS = { 'Used': C.accent, 'Needs Modification': C.warn, 'Partially Used': C.blue, 'Pending Review': C.purple };
 
-```js
-import { CameraView } from 'expo-camera';
-import * as Contacts from 'expo-contacts';
-import { Gyroscope } from 'expo-sensors';
-```
+const CAT_ICONS = {
+  'General Support': '💬', 'KYC & Verification': '🪪',
+  'Deposits & Withdrawals': '💸', 'Trading & Orders': '📈',
+  'Account & Security': '🔒', 'Compliance & Legal': '⚖️',
+  '⭐ Favourites': '⭐', '📝 My Templates': '📝',
+};
 
-This allows you to write [`Contacts.getContactsAsync()`](./sdk/contacts#contactsgetcontactsasynccontactquery) and read the contacts from the device, read the gyroscope sensor to detect device movement, or start the phone's camera and take photos.
+const BUILT_IN_TEMPLATES = {
+  'General Support': [
+    { id:'g1', title:'Welcome & Greeting', tags:['greeting','intro'],
+      text:'Hello [Customer Name], thank you for reaching out to our support team! I\'m here to help you today. Could you please provide more details about your query so I can assist you better?' },
+    { id:'g2', title:'Acknowledgement', tags:['ack','received'],
+      text:'Thank you for contacting us. We have received your request and are currently reviewing it. We\'ll get back to you within 24-48 hours. Your ticket ID for reference is [TICKET_ID].' },
+    { id:'g3', title:'Apology for Delay', tags:['delay','sorry','apology'],
+      text:'We sincerely apologize for the delay in responding to your query. We understand your time is valuable and we appreciate your patience. Our team is actively working on your issue and will update you shortly.' },
+    { id:'g4', title:'Issue Escalation', tags:['escalate','senior'],
+      text:'I understand the urgency of your issue. I am escalating this to our specialized team who will be best equipped to resolve this for you. You can expect a response within [X] hours. Thank you for your patience.' },
+    { id:'g5', title:'Ticket Resolved', tags:['resolved','closed','done'],
+      text:'Great news! Your issue has been resolved. Please check your account and let us know if everything looks correct. If you need any further assistance, don\'t hesitate to reach out. We\'re always here to help!' },
+    { id:'g6', title:'Feedback Request', tags:['feedback','survey','rating'],
+      text:'We hope your issue has been resolved to your satisfaction. We\'d love to hear your feedback on your support experience. Please take a moment to rate our service -- your input helps us improve!' },
+    { id:'g7', title:'Request for More Info', tags:['info','details','clarify'],
+      text:'To assist you better, could you please provide the following information:\n1) Your registered email address\n2) Date and time of the issue\n3) Any error messages you received\n\nThis will help us investigate and resolve your issue faster.' },
+    { id:'g8', title:'Closing Message', tags:['close','goodbye','end'],
+      text:'Thank you for contacting our support team. It was a pleasure assisting you today. Should you have any future queries, please don\'t hesitate to reach out. Have a wonderful day!' },
+    { id:'g9', title:'On Hold Notice', tags:['hold','wait'],
+      text:'Please allow me a moment to review your case thoroughly. I\'ll be right back with a complete update. Thank you for your patience!' },
+    { id:'g10', title:'Transfer Notice', tags:['transfer','department'],
+      text:'I\'m transferring you to our [Department] team who will be best placed to assist you with this matter. I\'ve briefed them on your issue. You\'re in good hands!' },
+  ],
+  'KYC & Verification': [
+    { id:'k1', title:'KYC Pending', tags:['kyc','pending','verification'],
+      text:'Your KYC verification is currently under review. This process typically takes 24-72 hours. Please ensure all documents submitted are clear, valid, and not expired. You will receive an email notification once the review is complete.' },
+    { id:'k2', title:'KYC Rejected', tags:['kyc','rejected','failed'],
+      text:'We regret to inform you that your KYC verification was not successful. Reason: [REASON].\n\nPlease resubmit with correct documents:\n• Government-issued Photo ID (Aadhaar/PAN/Passport)\n• A clear selfie\n\nEnsure documents are not blurred or cropped.' },
+    { id:'k3', title:'KYC Approved', tags:['kyc','approved','success'],
+      text:'Congratulations! Your KYC verification has been successfully completed. You now have full access to all features of our platform, including higher transaction limits. Thank you for completing this mandatory compliance requirement.' },
+    { id:'k4', title:'PAN Mismatch', tags:['pan','mismatch','name'],
+      text:'We noticed a mismatch between the name on your PAN card and the name registered on your account. As per PMLA and RBI guidelines, these must match exactly. Please update your name or resubmit a matching document to continue.' },
+    { id:'k5', title:'Document Expired', tags:['expired','document','id'],
+      text:'The document submitted for KYC appears to be expired. As per regulatory requirements, we can only accept valid, non-expired government-issued documents. Please resubmit a valid ID to complete your verification.' },
+    { id:'k6', title:'Enhanced Due Diligence', tags:['edd','enhanced','compliance'],
+      text:'As part of our compliance obligations, your account requires Enhanced Due Diligence (EDD). Please provide:\n1) Source of Funds declaration\n2) Proof of income/business\n3) Additional identity documents\n\nThis is a standard regulatory requirement.' },
+    { id:'k7', title:'Selfie Unclear', tags:['selfie','photo','unclear'],
+      text:'The selfie submitted for verification is not clear enough for our system to verify. Please retake your selfie ensuring:\n• Good lighting\n• Face is fully visible\n• No sunglasses or caps\n• Hold your ID next to your face' },
+  ],
+  'Deposits & Withdrawals': [
+    { id:'d1', title:'Deposit Not Credited', tags:['deposit','pending','credit'],
+      text:'We understand your concern about the delayed deposit. Crypto deposits require blockchain confirmations:\n• Bitcoin: 3 confirmations\n• Ethereum: 12 confirmations\n• USDT: 12 confirmations\n\nPlease share your transaction hash (TxID) so we can track it on the blockchain.' },
+    { id:'d2', title:'Withdrawal Delayed', tags:['withdrawal','delayed','pending'],
+      text:'Your withdrawal request is being processed. Withdrawals may take up to 24 hours due to security checks and compliance reviews under PMLA guidelines. If it has been more than 24 hours, please share your withdrawal ID so we can investigate immediately.' },
+    { id:'d3', title:'Wrong Network Deposit', tags:['wrong','network','lost'],
+      text:'We understand you may have sent funds on an incorrect network. Unfortunately, recovering cross-chain deposits is technically complex and not always possible. Please share the TxID and network used so our technical team can assess recovery possibility. Note: Recovery fees may apply and are not guaranteed.' },
+    { id:'d4', title:'Withdrawal Limit Exceeded', tags:['limit','withdrawal','exceeded'],
+      text:'Your withdrawal request exceeds your current daily limit. Limits are based on KYC level:\n• L1: ₹2L/day\n• L2: ₹20L/day\n\nTo increase your limit, please complete Level 2 KYC verification.' },
+    { id:'d5', title:'Bank Account Verification', tags:['bank','account','verify'],
+      text:'To process INR withdrawals, we need to verify your linked bank account. Please ensure:\n1) Bank account is in your name matching KYC\n2) Account is active and operational\n3) IFSC code is correct\n\nOnce verified, withdrawals will process within 1-2 business days.' },
+    { id:'d6', title:'TDS Deduction', tags:['tds','tax','deduction'],
+      text:'As per Section 194S of the Income Tax Act, 1% TDS is applicable on crypto transactions above ₹10,000 per transaction. The TDS has been deducted from your withdrawal as per legal requirements. Form 26AS will reflect this deduction.' },
+    { id:'d7', title:'INR Deposit via UPI', tags:['upi','inr','deposit'],
+      text:'To deposit INR via UPI:\n1) Go to Wallet → Add Funds → UPI\n2) Enter your UPI ID or scan our QR code\n3) Complete payment in your UPI app\n4) Funds typically reflect within 5-10 minutes\n\nFor IMPS/NEFT, processing may take up to 2 hours.' },
+  ],
+  'Trading & Orders': [
+    { id:'t1', title:'Order Failed', tags:['order','failed','trade'],
+      text:'Your order failed to execute. Common reasons include:\n1) Insufficient balance/funds\n2) Market moved beyond your limit price\n3) Minimum order size not met\n4) Technical timeout\n\nPlease check your balance and try placing the order again. If the issue persists, share the Order ID.' },
+    { id:'t2', title:'Slippage Explanation', tags:['slippage','price','difference'],
+      text:'The price difference you noticed is due to market slippage -- a natural occurrence in crypto markets where execution price differs from quoted price due to rapid price movement or low liquidity. We recommend using limit orders instead of market orders to control execution price.' },
+    { id:'t3', title:'Fees Explanation', tags:['fees','charges','trading'],
+      text:'Our trading fees:\n• Maker: 0.1%\n• Taker: 0.15%\n\nWithdrawal fees vary by asset and network. GST of 18% applies to trading fees as per Indian tax regulations. View your complete fee breakdown in Account → Fee Schedule.' },
+    { id:'t4', title:'P&L / Tax Query', tags:['pnl','profit','loss','tax'],
+      text:'Your P&L reflects realized profits/losses on completed trades. Crypto P&L is taxable in India at 30% flat rate under Section 115BBH (effective April 2022) with no loss set-off allowed. Download your trade history from Reports section for tax filing.' },
+    { id:'t5', title:'Liquidation Notice', tags:['liquidation','margin','futures'],
+      text:'Your position was liquidated due to insufficient margin. When margin ratio falls below the maintenance level, our system automatically liquidates to prevent further losses. We recommend using lower leverage and setting stop-losses to manage risk effectively.' },
+    { id:'t6', title:'Market Volatility', tags:['volatile','crash','pump'],
+      text:'The crypto market is currently experiencing high volatility. During such periods, prices may move rapidly and order execution may be delayed. We recommend caution with leveraged positions. Our systems are fully operational.' },
+  ],
+  'Account & Security': [
+    { id:'a1', title:'Account Frozen', tags:['frozen','blocked','restricted'],
+      text:'Your account has been temporarily restricted due to suspicious activity detected by our security systems. This is a precautionary measure to protect your funds. Please complete the verification steps in your email to restore access. If you believe this is an error, contact us immediately.' },
+    { id:'a2', title:'2FA Issue', tags:['2fa','otp','authenticator'],
+      text:'Troubleshooting 2FA authentication:\n1) Ensure your device time is synced (use automatic time setting)\n2) Try the backup codes provided during 2FA setup\n3) In Google Authenticator, check clock sync in app settings\n\nIf access is completely lost, submit a 2FA reset request with identity verification.' },
+    { id:'a3', title:'Password Reset', tags:['password','reset','forgot'],
+      text:'To reset your password, visit our login page and click "Forgot Password." A reset link will be sent to your registered email. The link expires in 15 minutes. Your new password must be strong (8+ characters, uppercase, numbers, special characters). All active sessions will be logged out for security.' },
+    { id:'a4', title:'Suspicious Activity', tags:['suspicious','hack','unauthorized'],
+      text:'We have detected unusual activity on your account. As a security measure, your account has been temporarily secured. Please:\n1) Change your password immediately\n2) Enable 2FA if not already active\n3) Review your recent login history\n4) Contact us if you notice any unauthorized transactions.' },
+    { id:'a5', title:'API Key Help', tags:['api','key','developer'],
+      text:'To create an API key: Settings → API Management → Create New Key. Set appropriate permissions (Read/Trade/Withdraw) and whitelist your IP address. Keep your Secret Key secure -- it\'s shown only once. Withdraw permissions are disabled by default for security.' },
+    { id:'a6', title:'Email Change Request', tags:['email','change','update'],
+      text:'To change your registered email address, you\'ll need to complete identity verification first. Please submit your request with:\n1) Current registered email\n2) New email address\n3) Government ID proof\n\nThis process takes 3-5 business days for security reasons.' },
+  ],
+  'Compliance & Legal': [
+    { id:'c1', title:'PMLA Compliance', tags:['pmla','aml','compliance'],
+      text:'As a VASP (Virtual Asset Service Provider) registered with FIU-India, we comply with the Prevention of Money Laundering Act (PMLA). We may request additional documentation for large transactions or unusual activity. Your cooperation ensures a safe trading environment for all users.' },
+    { id:'c2', title:'30% Crypto Tax Info', tags:['tax','30%','india'],
+      text:'As per Indian Budget 2022, crypto gains are taxed at 30% flat rate under Section 115BBH. Additionally:\n• 1% TDS per Section 194S\n• No loss set-off against other income\n• No deduction except cost of acquisition\n\nConsult a tax professional for filing. We provide downloadable tax reports in your account.' },
+    { id:'c3', title:'VASP Registration', tags:['vasp','fiu','registered'],
+      text:'We are a registered Virtual Asset Service Provider (VASP) with the Financial Intelligence Unit - India (FIU-IND) under the PMLA framework. Our registration ensures we operate within the legal framework established by the Government of India for crypto exchanges.' },
+    { id:'c4', title:'Suspicious Transaction', tags:['str','report','fraud'],
+      text:'We take financial crime seriously. If you believe you\'ve been a victim of fraud or money laundering through our platform, please provide all transaction details. We cooperate fully with law enforcement agencies and regulatory authorities as required by our PMLA obligations.' },
+    { id:'c5', title:'Account Closure', tags:['closure','delete','close'],
+      text:'To close your account:\n1) Withdraw all funds first\n2) Ensure no pending orders or transactions\n3) Submit a formal closure request with identity verification\n\nAs per PMLA data retention policy, transaction records are retained for 5 years after account closure.' },
+  ],
+};
 
-## All Expo SDK packages work in any React Native app
+const QUICK_PROMPTS = [
+  'Customer asking why withdrawal is delayed',
+  "User's KYC got rejected, needs explanation",
+  'Explain 30% crypto tax in simple terms',
+  'User lost funds on wrong network',
+  'Account frozen, customer is panicking',
+  'Order failed due to insufficient funds',
+];
 
-Expo apps are React Native apps, so all Expo SDK packages work in any React Native app with the `expo` package installed and configured. The easiest way to create a React Native app with support for Expo SDK packages is to use `create-expo-app`. However, you can also add Expo SDK support to an existing React Native app with the `npx install-expo-modules` command.
+// Extract all placeholders from a template text
+function extractPlaceholders(text) {
+  const matches = text.match(/\[([^\]]+)\]/g) || [];
+  return [...new Set(matches)];
+}
 
-<Terminal
-  cmd={['# Create a project named my-app', '$ npx create-expo-app my-app --template bare-minimum']}
-  cmdCopy="npx create-expo-app my-app --template bare-minimum"
-/>
+// Fill placeholders with values
+function fillPlaceholders(text, values) {
+  let result = text;
+  Object.entries(values).forEach(([key, val]) => {
+    result = result.split(key).join(val || key);
+  });
+  return result;
+}
 
-<BoxLink
-  title="Install Expo SDK packages in existing React Native apps"
-  href="/bare/installing-expo-modules"
-  description={
-    <>
-      Learn more about configuring projects created with{' '}
-      <CODE>npx @react-native-community/cli@latest init</CODE> to Expo SDK packages.
-    </>
-  }
-  Icon={BookOpen02Icon}
-/>
+// ─── TOAST HOOK ───────────────────────────────────────────
+function useToast() {
+  const [toast, setToast] = useState(null);
+  const show = useCallback((msg, color = C.accent) => {
+    setToast({ msg, color });
+    setTimeout(() => setToast(null), 2400);
+  }, []);
+  return { toast, show };
+}
 
-<BoxLink
-  title="Use libraries"
-  description="Learn how to install Expo SDK packages in your project."
-  href="/workflow/using-libraries"
-  Icon={BookOpen02Icon}
-/>
+function Toast({ toast }) {
+  if (!toast) return null;
+  return (
+    <View style={[ss.toast, { backgroundColor: toast.color }]}>
+      <Text style={ss.toastTxt}>{toast.msg}</Text>
+    </View>
+  );
+}
 
-## Using pre-release versions
+// ─── PRICE TICKER ─────────────────────────────────────────
+function PriceTicker() {
+  const [prices, setPrices] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
-New Expo SDK versions are released three times each year. Between these releases, we publish pre-release versions of the `expo` package and all of the Expo SDK packages. Pre-releases are not considered stable and should only be used if you are comfortable with the risk of encountering bugs or other issues.
+  const fetchPrices = useCallback(async () => {
+    try {
+      const res = await fetch(
+        'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,binancecoin,solana&vs_currencies=usd,inr&include_24hr_change=true',
+        { headers: { 'Accept': 'application/json' } }
+      );
+      const data = await res.json();
+      setPrices(data);
+      setLastUpdated(new Date());
+    } catch {
+      // silently fail -- prices just stay as last known
+    }
+    setLoading(false);
+  }, []);
 
-### Canary releases
+  useEffect(() => {
+    fetchPrices();
+    const interval = setInterval(fetchPrices, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
-Canary releases represent a snapshot of the state of the `main` branch at the time they are published. Canary package versions include `-canary` in the name, along with the date and commit hash, such as `54.0.0-canary-20240418-8d74597`. To install the latest canary release:
+  const COINS = [
+    { id: 'bitcoin',     symbol: 'BTC', emoji: '₿' },
+    { id: 'ethereum',    symbol: 'ETH', emoji: 'Ξ' },
+    { id: 'tether',      symbol: 'USDT', emoji: '₮' },
+    { id: 'binancecoin', symbol: 'BNB', emoji: '🔶' },
+    { id: 'solana',      symbol: 'SOL', emoji: '◎' },
+  ];
 
-<Terminal
-  cmd={[
-    '# Install the alpha version of expo and its related packages',
-    '$ npm install expo@canary && npx expo install --fix',
-  ]}
-  cmdCopy="npm install expo@canary && npx expo install --fix"
-/>
+  if (loading) return (
+    <View style={ss.tickerLoading}>
+      <ActivityIndicator size="small" color={C.accent} />
+      <Text style={ss.tickerLoadTxt}>Fetching live prices...</Text>
+    </View>
+  );
 
-You can often use pre-release versions of individual packages with stable releases of the Expo SDK. There may occasionally be incompatibilities or other issues that arise in canary-quality releases. You may want to [silence dependency validation warnings](/more/expo-cli/#configuring-dependency-validation) if you opt in to the canary package and once you have verified that it works well for your use cases.
+  return (
+    <View style={ss.tickerWrap}>
+      <View style={ss.tickerHeader}>
+        <Text style={ss.tickerTitle}>💹 Live Prices</Text>
+        <TouchableOpacity onPress={fetchPrices} style={ss.refreshBtn}>
+          <Text style={ss.refreshBtnTxt}>↻ Refresh</Text>
+        </TouchableOpacity>
+      </View>
+      {lastUpdated && (
+        <Text style={ss.tickerUpdated}>
+          Updated {lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+        </Text>
+      )}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={ss.tickerScroll}>
+        {COINS.map(coin => {
+          const d = prices?.[coin.id];
+          if (!d) return null;
+          const change = d.usd_24h_change;
+          const isUp = change >= 0;
+          const changeColor = isUp ? C.green : C.red;
+          return (
+            <View key={coin.id} style={ss.priceCard}>
+              <Text style={ss.coinEmoji}>{coin.emoji}</Text>
+              <Text style={ss.coinSymbol}>{coin.symbol}</Text>
+              <Text style={ss.coinUsd}>${d.usd?.toLocaleString('en-US', { maximumFractionDigits: 2 })}</Text>
+              <Text style={ss.coinInr}>₹{d.inr?.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+              {change !== undefined && (
+                <View style={[ss.changeBadge, { backgroundColor: changeColor + '22' }]}>
+                  <Text style={[ss.changeTxt, { color: changeColor }]}>
+                    {isUp ? '▲' : '▼'} {Math.abs(change).toFixed(2)}%
+                  </Text>
+                </View>
+              )}
+            </View>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
 
-### Beta releases
+// ─── PLACEHOLDER MODAL ────────────────────────────────────
+function PlaceholderModal({ visible, template, onClose, onCopy }) {
+  const placeholders = template ? extractPlaceholders(template.text) : [];
+  const [values, setValues] = useState({});
 
-Before each Expo SDK release, we publish beta versions of the `expo` package and all of the Expo SDK packages. Beta releases are considered much more stable than canary releases, and we encourage developers to try them out on their apps and share their feedback. Beta releases use the `beta` tag on npm and follow the instructions in the related [changelog](https://expo.dev/changelog) post.
+  useEffect(() => {
+    if (visible) {
+      const init = {};
+      (template ? extractPlaceholders(template.text) : []).forEach(p => { init[p] = ''; });
+      setValues(init);
+    }
+  }, [visible, template]);
 
-## Each Expo SDK version depends on a React Native version
+  if (!template) return null;
 
-<ReactNativeCompatibilityTable />
+  const hasPlaceholders = placeholders.length > 0;
+  const preview = fillPlaceholders(template.text, values);
 
-### Additional information
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <KeyboardAvoidingView style={ss.modalOv} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <View style={[ss.modalSheet, { maxHeight: '90%' }]}>
+          <View style={ss.sheetHandle} />
+          <Text style={ss.sheetTitle}>📋 {hasPlaceholders ? 'Fill Placeholders' : 'Copy Template'}</Text>
+          <Text style={ss.sheetSub}>{template.title}</Text>
 
-<Collapsible summary="Expo SDK policy for tracking React Native releases">
+          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
+            {hasPlaceholders ? (
+              <>
+                <Text style={ss.inputLbl}>FILL IN THE DETAILS</Text>
+                {placeholders.map(ph => (
+                  <View key={ph} style={{ marginBottom: 10 }}>
+                    <Text style={ss.phLabel}>{ph}</Text>
+                    <TextInput
+                      style={ss.sheetInput}
+                      placeholder={`Enter value for ${ph}`}
+                      placeholderTextColor={C.t3}
+                      value={values[ph] || ''}
+                      onChangeText={v => setValues(prev => ({ ...prev, [ph]: v }))}
+                    />
+                  </View>
+                ))}
+                <Text style={ss.inputLbl}>PREVIEW</Text>
+                <View style={ss.previewBox}>
+                  <Text style={ss.previewTxt}>{preview}</Text>
+                </View>
+              </>
+            ) : (
+              <View style={ss.previewBox}>
+                <Text style={ss.previewTxt}>{template.text}</Text>
+              </View>
+            )}
+          </ScrollView>
 
-- Expo SDK versions are released three times each year, and each Expo SDK release targets a single React Native version. This is typically the latest stable version at the time of the release.
-- The release cadence of React Native has varied over its history and it is currently on pace for six releases in 2025. While on this cadence, you can expect that there will be an Expo SDK version for every second React Native release.
-- Pre-release versions of the upcoming Expo SDK will include support for the latest version of React Native quickly, usually the same day it is released. A member of the Expo SDK team works on the React Native releases team for each release, and is responsible for continuously updating the React Native version in the Expo repository, verifying compatibility, and reporting regressions back to the team at Meta.
+          <View style={ss.sheetBtns}>
+            <TouchableOpacity style={ss.savBtn} onPress={() => onCopy(preview)}>
+              <Text style={ss.savBtnTxt}>📋 Copy & Use</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={ss.skipBtn} onPress={onClose}>
+              <Text style={ss.skipBtnTxt}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
 
-</Collapsible>
+// ─── CUSTOM TEMPLATE MODAL ────────────────────────────────
+function CustomTemplateModal({ visible, editing, onClose, onSave }) {
+  const [title, setTitle] = useState('');
+  const [text, setText] = useState('');
+  const [tags, setTags] = useState('');
 
-<Collapsible summary=" Why not release a new Expo SDK version immediately for every React Native release?">
+  useEffect(() => {
+    if (editing) {
+      setTitle(editing.title || '');
+      setText(editing.text || '');
+      setTags((editing.tags || []).join(', '));
+    } else {
+      setTitle(''); setText(''); setTags('');
+    }
+  }, [editing, visible]);
 
-At Expo, we have found that releasing three major version provides a good balance of stability and innovation for developers depending on our open source tools. Expo and Meta work closely together on releases, and we will keep improving our processes to get the latest Expo and React Native features to you as quickly as possible.
+  const handleSave = () => {
+    if (!title.trim() || !text.trim()) {
+      Alert.alert('Missing Info', 'Please add a title and response text.');
+      return;
+    }
+    const tagList = tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+    onSave({
+      id: editing?.id || 'custom_' + Date.now(),
+      title: title.trim(),
+      text: text.trim(),
+      tags: tagList,
+      category: '📝 My Templates',
+      isCustom: true,
+    });
+    onClose();
+  };
 
-</Collapsible>
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <KeyboardAvoidingView style={ss.modalOv} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <View style={[ss.modalSheet, { maxHeight: '92%' }]}>
+          <View style={ss.sheetHandle} />
+          <Text style={ss.sheetTitle}>{editing ? '✏️ Edit Template' : '📝 New Custom Template'}</Text>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text style={ss.inputLbl}>TITLE</Text>
+            <TextInput style={ss.sheetInput} placeholder="e.g. Weekend Delay Notice"
+              placeholderTextColor={C.t3} value={title} onChangeText={setTitle} />
 
-<Collapsible summary="What if I need a change from the latest React Native version and it's not yet in an Expo SDK release?"
->
-We work closely with the team at Meta to ensure that any urgent fixes are included in the React Native version used by the latest Expo SDK. If your issue won't be cherrypicked into an existing release because it is more niche, or it involves a breaking change, then you have two options:
+            <Text style={ss.inputLbl}>RESPONSE TEXT</Text>
+            <Text style={ss.phHint}>Tip: Use [Customer Name], [TICKET_ID], [AMOUNT] for auto-fill placeholders</Text>
+            <TextInput
+              style={[ss.sheetInput, { minHeight: 140, textAlignVertical: 'top', paddingTop: 12 }]}
+              placeholder="Type your response here..."
+              placeholderTextColor={C.t3}
+              value={text}
+              onChangeText={setText}
+              multiline
+            />
 
-1. Use [`patch-package`](https://github.com/ds300/patch-package) to pull in the fix.
-2. Use a [pre-release version of the Expo SDK](#using-pre-release-versions). An ([example](https://expo.dev/changelog/react-native-78)).
+            <Text style={ss.inputLbl}>TAGS (comma separated)</Text>
+            <TextInput style={ss.sheetInput} placeholder="e.g. delay, weekend, notice"
+              placeholderTextColor={C.t3} value={tags} onChangeText={setTags} />
+          </ScrollView>
 
-</Collapsible>
+          <View style={[ss.sheetBtns, { marginTop: 16 }]}>
+            <TouchableOpacity style={ss.savBtn} onPress={handleSave}>
+              <Text style={ss.savBtnTxt}>{editing ? 'Save Changes' : '+ Save Template'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={ss.skipBtn} onPress={onClose}>
+              <Text style={ss.skipBtnTxt}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
 
-<Collapsible summary="Can I use an older version of React Native with the latest Expo SDK?">
+// ─── LIBRARY SCREEN ───────────────────────────────────────
+function LibraryScreen({ onLog, showToast }) {
+  const [search, setSearch] = useState('');
+  const [cat, setCat] = useState('All');
+  const [expanded, setExpanded] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
 
-Packages in the Expo SDK are intended to support the target React Native version for that SDK. Typically, they will not support older versions of React Native, but they may. When a new version of React Native is released, the latest versions of the Expo SDK packages are typically updated to support it. However, this may take weeks or more, depending on the extent of the changes in the release.
+  // Favourites
+  const [favourites, setFavourites] = useState(new Set());
 
-</Collapsible>
+  // Custom templates
+  const [customTemplates, setCustomTemplates] = useState([]);
+  const [showCustomModal, setShowCustomModal] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState(null);
 
-## Support for Android and iOS versions
+  // Placeholder filler
+  const [phModal, setPhModal] = useState(false);
+  const [phTemplate, setPhTemplate] = useState(null);
 
-Each version of Expo SDK supports a minimum OS version of Android and iOS. For Android, the `compileSdkVersion` is defined which tells the [Gradle](https://developer.android.com/studio/build) which Android SDK version to use to compile the app. This also means that you can use the Android API features included in that SDK version and from the previous versions. For iOS, the [Xcode](https://developer.apple.com/news/upcoming-requirements/) tells the minimum Xcode SDK version to use to compile the app.
+  // Log modal
+  const [logModal, setLogModal] = useState(false);
+  const [pending, setPending] = useState(null);
+  const [ticketId, setTicketId] = useState('');
+  const [logStatus, setLogStatus] = useState('Used');
+  const [logNote, setLogNote] = useState('');
 
-<AndroidIOSCompatibilityTable />
+  useEffect(() => {
+    store.get(K.favourites, []).then(arr => setFavourites(new Set(arr)));
+    store.get(K.customTemplates, []).then(setCustomTemplates);
+  }, []);
 
-When deciding whether to upgrade your Expo SDK version, consider both Expo's SDK version and app store submission requirements, as described in the above table. Google Play Store and Apple App Store periodically increase their minimum required OS versions and API levels, which are required for new app submissions. Expo has no control over the app store requirements, and you should check [Google](https://developer.android.com/studio/build) and [Apple](https://developer.apple.com/news/upcoming-requirements/) for the current store submission requirements.
+  const toggleFav = useCallback(async (id) => {
+    setFavourites(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); showToast('Removed from Favourites'); }
+      else { next.add(id); showToast('⭐ Added to Favourites!'); }
+      store.set(K.favourites, [...next]);
+      return next;
+    });
+  }, [showToast]);
+
+  const saveCustomTemplate = useCallback(async (tpl) => {
+    setCustomTemplates(prev => {
+      const existing = prev.findIndex(t => t.id === tpl.id);
+      const updated = existing >= 0
+        ? prev.map(t => t.id === tpl.id ? tpl : t)
+        : [...prev, tpl];
+      store.set(K.customTemplates, updated);
+      return updated;
+    });
+    showToast(editingTemplate ? '✓ Template updated!' : '✓ Custom template saved!');
+  }, [editingTemplate, showToast]);
+
+  const deleteCustomTemplate = useCallback((id) => {
+    Alert.alert('Delete Template', 'Delete this custom template?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive', onPress: () => {
+          setCustomTemplates(prev => {
+            const updated = prev.filter(t => t.id !== id);
+            store.set(K.customTemplates, updated);
+            return updated;
+          });
+          showToast('Template deleted', C.red);
+        }
+      },
+    ]);
+  }, [showToast]);
+
+  // Build full template list including custom
+  const allTemplates = [
+    ...Object.entries(BUILT_IN_TEMPLATES).flatMap(([c, items]) =>
+      items.map(t => ({ ...t, category: c }))),
+    ...customTemplates,
+  ];
+
+  const favTemplates = allTemplates.filter(t => favourites.has(t.id));
+
+  const CATEGORIES = [
+    'All',
+    ...(favTemplates.length > 0 ? ['⭐ Favourites'] : []),
+    ...(customTemplates.length > 0 ? ['📝 My Templates'] : []),
+    ...Object.keys(BUILT_IN_TEMPLATES),
+  ];
+
+  const filtered = allTemplates.filter(t => {
+    if (cat === '⭐ Favourites') return favourites.has(t.id);
+    if (cat === '📝 My Templates') return t.isCustom;
+    const matchCat = cat === 'All' || t.category === cat;
+    const q = search.toLowerCase();
+    return matchCat && (!q || t.title.toLowerCase().includes(q) ||
+      t.text.toLowerCase().includes(q) || t.tags?.some(g => g.includes(q)));
+  }).filter(t => {
+    if (cat === 'All' || cat === '⭐ Favourites' || cat === '📝 My Templates') return true;
+    const q = search.toLowerCase();
+    return !q || t.title.toLowerCase().includes(q) ||
+      t.text.toLowerCase().includes(q) || t.tags?.some(g => g.includes(q));
+  });
+
+  // When copy tapped -- show placeholder modal first
+  const handleCopyTap = useCallback((t) => {
+    setPhTemplate(t);
+    setPhModal(true);
+  }, []);
+
+  const handleConfirmedCopy = useCallback((finalText) => {
+    Clipboard.setString(finalText);
+    if (phTemplate) {
+      setCopiedId(phTemplate.id);
+      setTimeout(() => setCopiedId(null), 2000);
+      setPending({ ...phTemplate, text: finalText });
+      setTicketId(''); setLogStatus('Used'); setLogNote('');
+    }
+    setPhModal(false);
+    setLogModal(true);
+    showToast('✓ Copied to clipboard!');
+  }, [phTemplate, showToast]);
+
+  const doLog = async () => {
+    if (!pending) return;
+    const entry = {
+      id: Date.now().toString(),
+      templateId: pending.id,
+      templateTitle: pending.title,
+      category: pending.category,
+      ticketId, status: logStatus, note: logNote,
+      timestamp: new Date().toISOString(),
+      text: pending.text,
+    };
+    await onLog(entry);
+    setLogModal(false);
+    showToast('✓ Usage logged!');
+  };
+
+  const renderItem = ({ item: t }) => {
+    const isExp = expanded === t.id;
+    const isCop = copiedId === t.id;
+    const isFav = favourites.has(t.id);
+
+    return (
+      <TouchableOpacity style={[ss.card, t.isCustom && ss.customCard]}
+        onPress={() => setExpanded(isExp ? null : t.id)} activeOpacity={0.85}>
+        <View style={ss.cardHead}>
+          <View style={ss.cardLeft}>
+            <TouchableOpacity onPress={() => toggleFav(t.id)} style={ss.favBtn}>
+              <Text style={[ss.favStar, isFav && ss.favStarOn]}>⭐</Text>
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={ss.cardTitle}>
+                {t.isCustom ? '📝 ' : ''}{t.title}
+              </Text>
+              <Text style={ss.cardCat}>{CAT_ICONS[t.category] || '💬'} {t.category}</Text>
+            </View>
+          </View>
+          <View style={ss.cardBtns}>
+            {t.isCustom && (
+              <TouchableOpacity style={ss.editBtn} onPress={() => {
+                setEditingTemplate(t); setShowCustomModal(true);
+              }}>
+                <Text style={ss.editBtnTxt}>✏️</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={[ss.copyBtn, isCop && ss.copyBtnOn]} onPress={() => handleCopyTap(t)}>
+              <Text style={[ss.copyBtnTxt, isCop && ss.copyBtnTxtOn]}>{isCop ? '✓' : 'Copy'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <Text style={ss.cardPrev} numberOfLines={isExp ? undefined : 2}>{t.text}</Text>
+
+        {t.tags?.length > 0 && (
+          <View style={ss.tagRow}>
+            {t.tags.map(g => <View key={g} style={ss.tag}><Text style={ss.tagTxt}>#{g}</Text></View>)}
+            <Text style={ss.expandHint}>{isExp ? '▲ less' : '▼ more'}</Text>
+          </View>
+        )}
+
+        {t.isCustom && (
+          <TouchableOpacity onPress={() => deleteCustomTemplate(t.id)} style={ss.deleteCustomBtn}>
+            <Text style={ss.deleteCustomTxt}>🗑️ Delete</Text>
+          </TouchableOpacity>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <View style={{ flex: 1 }}>
+      {/* Live Prices */}
+      <PriceTicker />
+
+      {/* Search */}
+      <View style={ss.searchBar}>
+        <Text style={ss.searchIco}>🔍</Text>
+        <TextInput style={ss.searchIn} placeholder="Search templates, tags..."
+          placeholderTextColor={C.t3} value={search} onChangeText={setSearch} />
+        {!!search && <TouchableOpacity onPress={() => setSearch('')}><Text style={ss.clearBtn}>✕</Text></TouchableOpacity>}
+      </View>
+
+      {/* Categories */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        style={ss.catScroll} contentContainerStyle={ss.catScrollIn}>
+        {CATEGORIES.map(c => (
+          <TouchableOpacity key={c} style={[ss.catBtn, cat === c && ss.catBtnOn]} onPress={() => setCat(c)}>
+            <Text style={[ss.catBtnTxt, cat === c && ss.catBtnTxtOn]}>
+              {c === 'All' ? '📋 All' : c}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Count + New Template button */}
+      <View style={ss.listTopRow}>
+        <Text style={ss.countTxt}>{filtered.length} template{filtered.length !== 1 ? 's' : ''}</Text>
+        <TouchableOpacity style={ss.newTplBtn} onPress={() => { setEditingTemplate(null); setShowCustomModal(true); }}>
+          <Text style={ss.newTplBtnTxt}>+ New</Text>
+        </TouchableOpacity>
+      </View>
+
+      <FlatList data={filtered} keyExtractor={i => i.id} renderItem={renderItem}
+        contentContainerStyle={ss.listIn} showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        ListEmptyComponent={
+          <View style={ss.emptyMini}>
+            <Text style={ss.emptyMiniTxt}>No templates found</Text>
+          </View>
+        }
+      />
+
+      {/* Placeholder Fill Modal */}
+      <PlaceholderModal
+        visible={phModal}
+        template={phTemplate}
+        onClose={() => setPhModal(false)}
+        onCopy={handleConfirmedCopy}
+      />
+
+      {/* Custom Template Modal */}
+      <CustomTemplateModal
+        visible={showCustomModal}
+        editing={editingTemplate}
+        onClose={() => { setShowCustomModal(false); setEditingTemplate(null); }}
+        onSave={saveCustomTemplate}
+      />
+
+      {/* Log Modal */}
+      <Modal visible={logModal} transparent animationType="slide">
+        <KeyboardAvoidingView style={ss.modalOv} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={ss.modalSheet}>
+            <View style={ss.sheetHandle} />
+            <Text style={ss.sheetTitle}>📋 Log Usage</Text>
+            {pending && <Text style={ss.sheetSub}>{pending.title}</Text>}
+            <Text style={ss.inputLbl}>ZENDESK TICKET ID</Text>
+            <TextInput style={ss.sheetInput} placeholder="e.g. ZD-12345"
+              placeholderTextColor={C.t3} value={ticketId} onChangeText={setTicketId} />
+            <Text style={ss.inputLbl}>STATUS</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {STATUS_OPTIONS.map(s => (
+                <TouchableOpacity key={s} style={[ss.statusChip, logStatus === s && ss.statusChipOn]} onPress={() => setLogStatus(s)}>
+                  <Text style={[ss.statusChipTxt, logStatus === s && ss.statusChipTxtOn]}>{s}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <Text style={ss.inputLbl}>NOTE (OPTIONAL)</Text>
+            <TextInput style={[ss.sheetInput, { minHeight: 50 }]} placeholder="Any notes about this response..."
+              placeholderTextColor={C.t3} value={logNote} onChangeText={setLogNote} multiline />
+            <View style={ss.sheetBtns}>
+              <TouchableOpacity style={ss.savBtn} onPress={doLog}><Text style={ss.savBtnTxt}>Save Log</Text></TouchableOpacity>
+              <TouchableOpacity style={ss.skipBtn} onPress={() => setLogModal(false)}><Text style={ss.skipBtnTxt}>Skip</Text></TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
+  );
+}
+
+// ─── AI SCREEN ────────────────────────────────────────────
+function AIScreen({ showToast }) {
+  const [query, setQuery] = useState('');
+  const [result, setResult] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [settings, setSettings] = useState({ claudeKey: '' });
+
+  useEffect(() => { store.get(K.settings, {}).then(setSettings); }, []);
+
+  const SYSTEM = `You are a customer support specialist for an Indian crypto exchange. Help support agents write professional, compliant, empathetic responses.
+
+Rules:
+- Comply with PMLA, IT Act Section 115BBH/194S, FIU-IND VASP guidelines
+- Empathetic and professional tone
+- Clear and jargon-free
+- Ready to copy-paste directly
+
+Provide TWO variations:
+
+**Brief Response:** (under 80 words)
+[short version]
+
+**Detailed Response:** (full version)
+[detailed version]`;
+
+  const ask = async () => {
+    if (!query.trim()) return;
+    if (!settings.claudeKey) { showToast('⚠️ Add Claude API key in Settings', C.warn); return; }
+    setLoading(true); setResult('');
+    try {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': settings.claudeKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, system: SYSTEM, messages: [{ role: 'user', content: query }] }),
+      });
+      const d = await r.json();
+      if (d.error) throw new Error(d.error.message);
+      setResult(d.content?.map(c => c.text || '').join('') || 'No response.');
+    } catch (e) {
+      setResult('Error: ' + e.message + '\n\nPlease add your Claude API key in Settings tab.');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={ss.aiContent} keyboardShouldPersistTaps="handled">
+        <View style={ss.infoBanner}>
+          <Text style={ss.infoTxt}>◈ Uses Claude AI -- add your free API key in Settings. Get it at console.anthropic.com</Text>
+        </View>
+        <Text style={ss.secLabel}>QUICK PROMPTS</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+          {QUICK_PROMPTS.map(p => (
+            <TouchableOpacity key={p} style={ss.qChip} onPress={() => setQuery(p)}>
+              <Text style={ss.qChipTxt}>{p}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <Text style={ss.secLabel}>YOUR QUERY</Text>
+        <TextInput style={ss.aiInput} placeholder="Describe the customer issue..."
+          placeholderTextColor={C.t3} value={query} onChangeText={setQuery} multiline numberOfLines={4} textAlignVertical="top" />
+        <TouchableOpacity style={[ss.aiSubmit, (!query.trim() || loading) && { opacity: 0.5 }]} onPress={ask} disabled={!query.trim() || loading}>
+          {loading ? <ActivityIndicator color={C.white} /> : <Text style={ss.aiSubmitTxt}>✨ Generate Response with Claude</Text>}
+        </TouchableOpacity>
+        {!!result && (
+          <View style={ss.resultBox}>
+            <View style={ss.resultHead}>
+              <Text style={ss.resultTitle}>AI Generated Response</Text>
+              <TouchableOpacity style={[ss.copyBtn, copied && ss.copyBtnOn]} onPress={() => {
+                Clipboard.setString(result); setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+                showToast('✓ Copied!');
+              }}>
+                <Text style={[ss.copyBtnTxt, copied && ss.copyBtnTxtOn]}>{copied ? '✓' : 'Copy'}</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={ss.resultTxt}>{result}</Text>
+          </View>
+        )}
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+// ─── TOOLS SCREEN (Blockchain TX + Zendesk) ───────────────
+function ToolsScreen({ showToast }) {
+  const [toolTab, setToolTab] = useState('tx');
+
+  // TX Checker state
+  const [txid, setTxid] = useState('');
+  const [txNetwork, setTxNetwork] = useState('BTC');
+  const [txResult, setTxResult] = useState(null);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txError, setTxError] = useState('');
+
+  // Zendesk state
+  const [zdTicket, setZdTicket] = useState('');
+  const [zdResult, setZdResult] = useState(null);
+  const [zdLoading, setZdLoading] = useState(false);
+  const [zdError, setZdError] = useState('');
+  const [zdSettings, setZdSettings] = useState({ zdSubdomain: '', zdEmail: '', zdToken: '' });
+
+  useEffect(() => { store.get(K.settings, {}).then(setZdSettings); }, []);
+
+  const TX_NETWORKS = ['BTC', 'ETH / ERC20', 'TRC20 (TRON)'];
+
+  const checkTx = async () => {
+    if (!txid.trim()) return;
+    setTxLoading(true); setTxResult(null); setTxError('');
+    try {
+      let data = null;
+      if (txNetwork === 'BTC') {
+        const res = await fetch(`https://blockstream.info/api/tx/${txid.trim()}`);
+        if (!res.ok) throw new Error('Transaction not found. Check the TxID and network.');
+        const d = await res.json();
+        const confirmed = d.status?.confirmed;
+        const blockHeight = d.status?.block_height;
+        // Get current block height
+        const tipRes = await fetch('https://blockstream.info/api/blocks/tip/height');
+        const tipHeight = tipRes.ok ? await tipRes.json() : null;
+        const confirmations = confirmed && tipHeight && blockHeight ? tipHeight - blockHeight + 1 : 0;
+        const amountBTC = d.vout?.reduce((s, o) => s + (o.value || 0), 0) / 1e8;
+        data = {
+          network: 'Bitcoin (BTC)',
+          status: confirmed ? '✅ Confirmed' : '⏳ Pending / Unconfirmed',
+          confirmations: confirmed ? confirmations : 0,
+          required: 3,
+          amount: amountBTC?.toFixed(8) + ' BTC',
+          fee: d.fee ? (d.fee / 1e8).toFixed(8) + ' BTC' : 'N/A',
+          txid: txid.trim(),
+        };
+      } else if (txNetwork === 'ETH / ERC20') {
+        const res = await fetch(`https://api.blockchair.com/ethereum/transactions?q=hash(${txid.trim()})`);
+        if (!res.ok) throw new Error('Could not fetch from Blockchair. Try again.');
+        const d = await res.json();
+        const tx = d.data?.[0];
+        if (!tx) throw new Error('Transaction not found on Ethereum network.');
+        data = {
+          network: 'Ethereum (ETH/ERC20)',
+          status: tx.block_id ? '✅ Confirmed' : '⏳ Pending',
+          confirmations: tx.block_id ? (d.context?.state - tx.block_id + 1) : 0,
+          required: 12,
+          amount: tx.value ? (parseFloat(tx.value) / 1e18).toFixed(6) + ' ETH' : 'Token Transfer',
+          fee: tx.fee ? (parseFloat(tx.fee) / 1e18).toFixed(6) + ' ETH' : 'N/A',
+          txid: txid.trim(),
+        };
+      } else {
+        // TRON / TRC20
+        const res = await fetch(`https://apilist.tronscanapi.com/api/transaction-info?hash=${txid.trim()}`);
+        if (!res.ok) throw new Error('Could not connect to TRON network. Try again.');
+        const d = await res.json();
+        if (!d.hash) throw new Error('Transaction not found on TRON network.');
+        data = {
+          network: 'TRON (TRC20/USDT)',
+          status: d.confirmed ? '✅ Confirmed' : '⏳ Pending',
+          confirmations: d.confirmed ? 'Confirmed' : 0,
+          required: 20,
+          amount: d.tokenTransferInfo?.amount_str
+            ? (parseInt(d.tokenTransferInfo.amount_str) / 1e6).toFixed(2) + ' ' + (d.tokenTransferInfo.symbol || 'TRX')
+            : (d.amount / 1e6)?.toFixed(2) + ' TRX',
+          fee: 'Energy/Bandwidth',
+          txid: txid.trim(),
+        };
+      }
+      setTxResult(data);
+    } catch (e) {
+      setTxError(e.message || 'Failed to fetch transaction. Check TxID and network.');
+    }
+    setTxLoading(false);
+  };
+
+  const copyTxReply = () => {
+    if (!txResult) return;
+    const txt = `We have checked your transaction on the blockchain:\n\n` +
+      `• Network: ${txResult.network}\n` +
+      `• Status: ${txResult.status}\n` +
+      `• Confirmations: ${txResult.confirmations} / ${txResult.required} required\n` +
+      `• Amount: ${txResult.amount}\n` +
+      `• TxID: ${txResult.txid.slice(0, 20)}...\n\n` +
+      (txResult.confirmations < txResult.required
+        ? `Your transaction is still awaiting confirmations. Please allow some more time.`
+        : `Your transaction is fully confirmed on the blockchain. If funds have not been credited, please contact us with this transaction ID.`);
+    Clipboard.setString(txt);
+    showToast('✓ TX reply copied!');
+  };
+
+  const checkZendesk = async () => {
+    if (!zdTicket.trim()) return;
+    if (!zdSettings.zdSubdomain || !zdSettings.zdEmail || !zdSettings.zdToken) {
+      setZdError('Please add your Zendesk subdomain, email and API token in Settings first.');
+      return;
+    }
+    setZdLoading(true); setZdResult(null); setZdError('');
+    try {
+      const ticketNum = zdTicket.trim().replace(/[^0-9]/g, '');
+      const auth = btoa(`${zdSettings.zdEmail}/token:${zdSettings.zdToken}`);
+      const res = await fetch(
+        `https://${zdSettings.zdSubdomain}.zendesk.com/api/v2/tickets/${ticketNum}.json`,
+        { headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' } }
+      );
+      if (res.status === 401) throw new Error('Authentication failed. Check your Zendesk email and API token in Settings.');
+      if (res.status === 404) throw new Error(`Ticket #${ticketNum} not found in your Zendesk.`);
+      if (!res.ok) throw new Error(`Zendesk error: ${res.status}`);
+      const d = await res.json();
+      const t = d.ticket;
+      setZdResult({
+        id: t.id,
+        subject: t.subject,
+        status: t.status,
+        priority: t.priority || 'normal',
+        created: t.created_at,
+        updated: t.updated_at,
+        requester_id: t.requester_id,
+        description: t.description?.slice(0, 200),
+      });
+    } catch (e) {
+      setZdError(e.message);
+    }
+    setZdLoading(false);
+  };
+
+  const ZD_STATUS_COLORS = { open: C.red, pending: C.warn, solved: C.accent, closed: C.t3, new: C.blue };
+
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={ss.toolsContent} keyboardShouldPersistTaps="handled">
+      {/* Tool tabs */}
+      <View style={ss.toolTabRow}>
+        <TouchableOpacity style={[ss.toolTab, toolTab === 'tx' && ss.toolTabOn]} onPress={() => setToolTab('tx')}>
+          <Text style={[ss.toolTabTxt, toolTab === 'tx' && ss.toolTabTxtOn]}>⛓️ TX Checker</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[ss.toolTab, toolTab === 'zd' && ss.toolTabOn]} onPress={() => setToolTab('zd')}>
+          <Text style={[ss.toolTabTxt, toolTab === 'zd' && ss.toolTabTxtOn]}>🔍 Zendesk</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── BLOCKCHAIN TX CHECKER ── */}
+      {toolTab === 'tx' && (
+        <View>
+          <Text style={ss.toolTitle}>⛓️ Blockchain TX Checker</Text>
+          <Text style={ss.toolDesc}>Paste a customer's TxID to instantly check its confirmation status on the blockchain.</Text>
+
+          <Text style={ss.inputLbl}>SELECT NETWORK</Text>
+          <View style={ss.networkRow}>
+            {TX_NETWORKS.map(n => (
+              <TouchableOpacity key={n} style={[ss.networkBtn, txNetwork === n && ss.networkBtnOn]} onPress={() => setTxNetwork(n)}>
+                <Text style={[ss.networkBtnTxt, txNetwork === n && ss.networkBtnTxtOn]}>{n}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={ss.inputLbl}>TRANSACTION ID (TxID / Hash)</Text>
+          <TextInput
+            style={ss.toolInput}
+            placeholder="Paste TxID here..."
+            placeholderTextColor={C.t3}
+            value={txid}
+            onChangeText={setTxid}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+
+          <TouchableOpacity
+            style={[ss.toolSubmit, (!txid.trim() || txLoading) && { opacity: 0.5 }]}
+            onPress={checkTx} disabled={!txid.trim() || txLoading}>
+            {txLoading
+              ? <ActivityIndicator color={C.white} />
+              : <Text style={ss.toolSubmitTxt}>🔍 Check Transaction</Text>}
+          </TouchableOpacity>
+
+          {txError ? (
+            <View style={ss.errorBox}>
+              <Text style={ss.errorTxt}>⚠️ {txError}</Text>
+            </View>
+          ) : null}
+
+          {txResult && (
+            <View style={ss.resultCard}>
+              <View style={ss.resultCardHead}>
+                <Text style={ss.resultCardTitle}>Transaction Result</Text>
+                <TouchableOpacity style={ss.copyBtn} onPress={copyTxReply}>
+                  <Text style={ss.copyBtnTxt}>Copy Reply</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={ss.txRow}>
+                <Text style={ss.txLbl}>Network</Text>
+                <Text style={ss.txVal}>{txResult.network}</Text>
+              </View>
+              <View style={ss.txRow}>
+                <Text style={ss.txLbl}>Status</Text>
+                <Text style={[ss.txVal, { color: txResult.status.includes('✅') ? C.accent : C.warn }]}>{txResult.status}</Text>
+              </View>
+              <View style={ss.txRow}>
+                <Text style={ss.txLbl}>Confirmations</Text>
+                <Text style={[ss.txVal, {
+                  color: Number(txResult.confirmations) >= txResult.required ? C.accent : C.warn
+                }]}>
+                  {txResult.confirmations} / {txResult.required} required
+                </Text>
+              </View>
+              <View style={ss.txRow}>
+                <Text style={ss.txLbl}>Amount</Text>
+                <Text style={ss.txVal}>{txResult.amount}</Text>
+              </View>
+              <View style={ss.txRow}>
+                <Text style={ss.txLbl}>Network Fee</Text>
+                <Text style={ss.txVal}>{txResult.fee}</Text>
+              </View>
+              <View style={[ss.txRow, { borderBottomWidth: 0 }]}>
+                <Text style={ss.txLbl}>TxID</Text>
+                <Text style={[ss.txVal, { fontSize: 10, flex: 1 }]} numberOfLines={1}>{txResult.txid}</Text>
+              </View>
+
+              {/* Confirmation Progress Bar */}
+              <View style={ss.confBarWrap}>
+                <View style={ss.confBarTrack}>
+                  <View style={[ss.confBarFill, {
+                    width: `${Math.min(100, (Number(txResult.confirmations) / txResult.required) * 100)}%`,
+                    backgroundColor: Number(txResult.confirmations) >= txResult.required ? C.accent : C.warn,
+                  }]} />
+                </View>
+                <Text style={ss.confBarLbl}>
+                  {Number(txResult.confirmations) >= txResult.required ? 'Fully confirmed ✓' : 'Awaiting confirmations...'}
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* ── ZENDESK LOOKUP ── */}
+      {toolTab === 'zd' && (
+        <View>
+          <Text style={ss.toolTitle}>🔍 Zendesk Ticket Lookup</Text>
+          <Text style={ss.toolDesc}>Look up a ticket's details without opening the browser. Set up your Zendesk credentials in Settings first.</Text>
+
+          {(!zdSettings.zdSubdomain || !zdSettings.zdEmail || !zdSettings.zdToken) && (
+            <View style={ss.warnBanner}>
+              <Text style={ss.warnBannerTxt}>⚠️ Zendesk credentials not set. Go to Settings → Zendesk Config to add your subdomain, email and API token.</Text>
+            </View>
+          )}
+
+          <Text style={ss.inputLbl}>TICKET NUMBER</Text>
+          <TextInput
+            style={ss.toolInput}
+            placeholder="e.g. 12345 or ZD-12345"
+            placeholderTextColor={C.t3}
+            value={zdTicket}
+            onChangeText={setZdTicket}
+            keyboardType="numeric"
+          />
+
+          <TouchableOpacity
+            style={[ss.toolSubmit, { backgroundColor: C.blue }, (!zdTicket.trim() || zdLoading) && { opacity: 0.5 }]}
+            onPress={checkZendesk} disabled={!zdTicket.trim() || zdLoading}>
+            {zdLoading
+              ? <ActivityIndicator color={C.white} />
+              : <Text style={ss.toolSubmitTxt}>🔍 Look Up Ticket</Text>}
+          </TouchableOpacity>
+
+          {zdError ? (
+            <View style={ss.errorBox}>
+              <Text style={ss.errorTxt}>⚠️ {zdError}</Text>
+            </View>
+          ) : null}
+
+          {zdResult && (
+            <View style={ss.resultCard}>
+              <Text style={ss.resultCardTitle}>Ticket #{zdResult.id}</Text>
+
+              <View style={[ss.zdStatusRow]}>
+                <View style={[ss.zdStatusBadge, { backgroundColor: (ZD_STATUS_COLORS[zdResult.status] || C.t3) + '22', borderColor: ZD_STATUS_COLORS[zdResult.status] || C.t3 }]}>
+                  <Text style={[ss.zdStatusTxt, { color: ZD_STATUS_COLORS[zdResult.status] || C.t3 }]}>
+                    {zdResult.status?.toUpperCase()}
+                  </Text>
+                </View>
+                <View style={[ss.zdStatusBadge, { backgroundColor: C.purple + '22', borderColor: C.purple }]}>
+                  <Text style={[ss.zdStatusTxt, { color: C.purple }]}>
+                    {zdResult.priority?.toUpperCase()} PRIORITY
+                  </Text>
+                </View>
+              </View>
+
+              <View style={ss.txRow}>
+                <Text style={ss.txLbl}>Subject</Text>
+                <Text style={[ss.txVal, { flex: 1 }]}>{zdResult.subject}</Text>
+              </View>
+              <View style={ss.txRow}>
+                <Text style={ss.txLbl}>Created</Text>
+                <Text style={ss.txVal}>{new Date(zdResult.created).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</Text>
+              </View>
+              <View style={[ss.txRow, { borderBottomWidth: 0 }]}>
+                <Text style={ss.txLbl}>Updated</Text>
+                <Text style={ss.txVal}>{new Date(zdResult.updated).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</Text>
+              </View>
+
+              {zdResult.description && (
+                <View style={ss.zdDescBox}>
+                  <Text style={ss.zdDescLabel}>DESCRIPTION PREVIEW</Text>
+                  <Text style={ss.zdDescTxt}>{zdResult.description}...</Text>
+                </View>
+              )}
+
+              <TouchableOpacity style={[ss.toolSubmit, { marginTop: 12 }]} onPress={() => {
+                Clipboard.setString(`Zendesk Ticket #${zdResult.id}\nSubject: ${zdResult.subject}\nStatus: ${zdResult.status}\nPriority: ${zdResult.priority}`);
+                showToast('✓ Ticket info copied!');
+              }}>
+                <Text style={ss.toolSubmitTxt}>📋 Copy Ticket Info</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+    </ScrollView>
+  );
+}
+
+// ─── HISTORY SCREEN ───────────────────────────────────────
+function HistoryScreen({ log, onUpdate, onDelete, showToast }) {
+  const [filter, setFilter] = useState('All');
+  const [editTicket, setEditTicket] = useState({});
+  const [editNote, setEditNote] = useState({});
+
+  const filtered = filter === 'All' ? log : log.filter(e => e.status === filter);
+
+  const renderEntry = ({ item: e }) => {
+    const sc = STATUS_COLORS[e.status] || C.t3;
+    const tv = editTicket[e.id] !== undefined ? editTicket[e.id] : (e.ticketId || '');
+    const nv = editNote[e.id] !== undefined ? editNote[e.id] : (e.note || '');
+    return (
+      <View style={ss.entry}>
+        <View style={ss.entryTop}>
+          <View style={{ flex: 1 }}>
+            <Text style={ss.entryTitle}>{e.templateTitle}</Text>
+            <Text style={ss.entryCat}>{e.category}</Text>
+          </View>
+          <TouchableOpacity onPress={() => {
+            Alert.alert('Delete', 'Delete this log entry?', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Delete', style: 'destructive', onPress: () => { onDelete(e.id); showToast('Deleted', C.red); } },
+            ]);
+          }}><Text style={ss.delBtn}>✕</Text></TouchableOpacity>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+          {STATUS_OPTIONS.map(s => (
+            <TouchableOpacity key={s} style={[ss.statusChip, e.status === s && ss.statusChipOn]}
+              onPress={() => onUpdate(e.id, { status: s })}>
+              <Text style={[ss.statusChipTxt, e.status === s && ss.statusChipTxtOn]}>{s}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <View style={ss.fieldRow}>
+          <Text style={ss.fieldLbl}>🎫 Ticket</Text>
+          <TextInput style={ss.fieldIn} value={tv}
+            onChangeText={v => setEditTicket(p => ({ ...p, [e.id]: v }))}
+            onBlur={() => onUpdate(e.id, { ticketId: editTicket[e.id] ?? e.ticketId })}
+            placeholder="Add Ticket ID" placeholderTextColor={C.t3} />
+        </View>
+        <TextInput style={ss.noteIn} value={nv}
+          onChangeText={v => setEditNote(p => ({ ...p, [e.id]: v }))}
+          onBlur={() => onUpdate(e.id, { note: editNote[e.id] ?? e.note })}
+          placeholder="Add a note..." placeholderTextColor={C.t3} multiline />
+        <Text style={ss.entryTs}>🕐 {new Date(e.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</Text>
+        <Text style={ss.entryPrev} numberOfLines={2}>{e.text}</Text>
+      </View>
+    );
+  };
+
+  if (log.length === 0) return (
+    <View style={ss.empty}><Text style={ss.emptyEmoji}>📋</Text>
+      <Text style={ss.emptyTitle}>No logs yet</Text>
+      <Text style={ss.emptyTxt}>Copy a template from Library and log your usage</Text></View>
+  );
+
+  return (
+    <View style={{ flex: 1 }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        style={ss.filterScroll} contentContainerStyle={ss.filterIn}>
+        {['All', ...STATUS_OPTIONS].map(s => (
+          <TouchableOpacity key={s} style={[ss.catBtn, filter === s && ss.catBtnOn]} onPress={() => setFilter(s)}>
+            <Text style={[ss.catBtnTxt, filter === s && ss.catBtnTxtOn]}>
+              {s}{s !== 'All' ? ` (${log.filter(e => e.status === s).length})` : ` (${log.length})`}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      <FlatList data={filtered} keyExtractor={i => i.id} renderItem={renderEntry}
+        contentContainerStyle={ss.listIn} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" />
+    </View>
+  );
+}
+
+// ─── STATS SCREEN ─────────────────────────────────────────
+function StatsScreen({ log }) {
+  const stats = {
+    total: log.length, used: log.filter(e => e.status === 'Used').length,
+    needsMod: log.filter(e => e.status === 'Needs Modification').length,
+    ticketed: log.filter(e => e.ticketId?.trim()).length,
+  };
+  const maxCat = Math.max(1, ...Object.keys(BUILT_IN_TEMPLATES).map(c => log.filter(e => e.category === c).length));
+
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={ss.statsContent}>
+      <View style={ss.statGrid}>
+        {[
+          { icon: '📨', label: 'Total Used', val: stats.total, color: C.accent },
+          { icon: '✅', label: 'Successful', val: stats.used, color: C.accent },
+          { icon: '⚠️', label: 'Need Fix', val: stats.needsMod, color: C.warn },
+          { icon: '🎫', label: 'Ticketed', val: stats.ticketed, color: C.blue },
+        ].map(s => (
+          <View key={s.label} style={ss.statCard}>
+            <Text style={ss.statIcon}>{s.icon}</Text>
+            <Text style={[ss.statVal, { color: s.color }]}>{s.val}</Text>
+            <Text style={ss.statLbl}>{s.label}</Text>
+          </View>
+        ))}
+      </View>
+      <Text style={ss.secLabel}>CATEGORY USAGE</Text>
+      {Object.keys(BUILT_IN_TEMPLATES).map(cat => {
+        const count = log.filter(e => e.category === cat).length;
+        const pct = (count / maxCat) * 100;
+        return (
+          <View key={cat} style={ss.barRow}>
+            <Text style={ss.barLbl}>{CAT_ICONS[cat]} {cat.split(' ')[0]}</Text>
+            <View style={ss.barTrack}><View style={[ss.barFill, { width: `${pct}%` }]} /></View>
+            <Text style={ss.barCount}>{count}</Text>
+          </View>
+        );
+      })}
+      <Text style={[ss.secLabel, { marginTop: 16 }]}>STATUS BREAKDOWN</Text>
+      {STATUS_OPTIONS.map(s => {
+        const count = log.filter(e => e.status === s).length;
+        const pct = stats.total ? (count / stats.total) * 100 : 0;
+        return (
+          <View key={s} style={ss.stsRow}>
+            <View style={[ss.stsDot, { backgroundColor: STATUS_COLORS[s] }]} />
+            <Text style={ss.stsLbl}>{s}</Text>
+            <View style={ss.stsTrack}><View style={[ss.stsFill, { width: `${pct}%`, backgroundColor: STATUS_COLORS[s] }]} /></View>
+            <Text style={ss.stsCount}>{count}</Text>
+          </View>
+        );
+      })}
+      {log.length === 0 && (
+        <View style={ss.empty}><Text style={ss.emptyEmoji}>📊</Text>
+          <Text style={ss.emptyTitle}>No data yet</Text>
+          <Text style={ss.emptyTxt}>Start using templates to see analytics here</Text></View>
+      )}
+    </ScrollView>
+  );
+}
+
+// ─── SETTINGS SCREEN ──────────────────────────────────────
+function SettingsScreen({ showToast, onRefresh }) {
+  const [s, setS] = useState({ claudeKey: '', zdSubdomain: '', zdEmail: '', zdToken: '', agentName: '' });
+  const [showKey, setShowKey] = useState(false);
+  const [showZdToken, setShowZdToken] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => { store.get(K.settings, {}).then(d => setS(prev => ({ ...prev, ...d }))); }, []);
+
+  const save = async () => {
+    await store.set(K.settings, s);
+    setSaved(true); setTimeout(() => setSaved(false), 2000);
+    showToast('✓ Settings saved!');
+  };
+
+  const clearAll = () => {
+    Alert.alert('Clear All Logs', 'Permanently delete all usage logs?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear All', style: 'destructive', onPress: async () => {
+          await AsyncStorage.removeItem(K.log);
+          onRefresh();
+          showToast('All logs cleared', C.red);
+        }
+      },
+    ]);
+  };
+
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={ss.settingsContent}>
+      <Text style={ss.secLabel}>AGENT PROFILE</Text>
+      <View style={ss.settCard}>
+        <Text style={ss.inputLbl}>YOUR NAME / AGENT ID</Text>
+        <TextInput style={ss.settIn} placeholder="e.g. Rahul -- Agent #42"
+          placeholderTextColor={C.t3} value={s.agentName || ''} onChangeText={v => setS(p => ({ ...p, agentName: v }))} />
+      </View>
+
+      <Text style={ss.secLabel}>CLAUDE AI (for AI Assist tab)</Text>
+      <View style={ss.settCard}>
+        <Text style={ss.settCardTitle}>Claude API Key</Text>
+        <Text style={ss.linkTxt}>Get free key at: console.anthropic.com → API Keys</Text>
+        <View style={[ss.keyRow, { marginTop: 8 }]}>
+          <TextInput style={[ss.settIn, { flex: 1 }]} placeholder="sk-ant-api03-..."
+            placeholderTextColor={C.t3} value={s.claudeKey || ''}
+            onChangeText={v => setS(p => ({ ...p, claudeKey: v }))}
+            secureTextEntry={!showKey} autoCapitalize="none" />
+          <TouchableOpacity style={ss.eyeBtn} onPress={() => setShowKey(p => !p)}>
+            <Text>{showKey ? '🙈' : '👁️'}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <Text style={ss.secLabel}>ZENDESK (for Ticket Lookup in Tools tab)</Text>
+      <View style={ss.settCard}>
+        <Text style={ss.settCardTitle}>Zendesk Configuration</Text>
+        <Text style={ss.linkTxt}>Get API token: Zendesk Admin → Apps & Integrations → Zendesk API → Add Token</Text>
+
+        <Text style={ss.inputLbl}>SUBDOMAIN</Text>
+        <TextInput style={ss.settIn} placeholder="yourcompany (from yourcompany.zendesk.com)"
+          placeholderTextColor={C.t3} value={s.zdSubdomain || ''}
+          onChangeText={v => setS(p => ({ ...p, zdSubdomain: v }))} autoCapitalize="none" />
+
+        <Text style={ss.inputLbl}>AGENT EMAIL</Text>
+        <TextInput style={[ss.settIn, { marginTop: 8 }]} placeholder="you@yourcompany.com"
+          placeholderTextColor={C.t3} value={s.zdEmail || ''}
+          onChangeText={v => setS(p => ({ ...p, zdEmail: v }))} autoCapitalize="none" keyboardType="email-address" />
+
+        <Text style={ss.inputLbl}>API TOKEN</Text>
+        <View style={[ss.keyRow, { marginTop: 0 }]}>
+          <TextInput style={[ss.settIn, { flex: 1 }]} placeholder="Paste Zendesk API token here"
+            placeholderTextColor={C.t3} value={s.zdToken || ''}
+            onChangeText={v => setS(p => ({ ...p, zdToken: v }))}
+            secureTextEntry={!showZdToken} autoCapitalize="none" />
+          <TouchableOpacity style={ss.eyeBtn} onPress={() => setShowZdToken(p => !p)}>
+            <Text>{showZdToken ? '🙈' : '👁️'}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <Text style={ss.secLabel}>ABOUT</Text>
+      <View style={ss.settCard}>
+        {[
+          ['Version', '2.0 -- 6 New Features'],
+          ['Templates', '35+ built-in'],
+          ['New Features', '⭐ Favs · 📝 Custom · 📋 Placeholders · ⛓️ TX · 🔍 Zendesk · 💹 Prices'],
+          ['Storage', 'On-device only'],
+          ['Compliance', 'PMLA, FIU-IND, IT Act'],
+        ].map(([k, v]) => (
+          <View key={k} style={ss.aboutRow}>
+            <Text style={ss.aboutLbl}>{k}</Text>
+            <Text style={[ss.aboutVal, { flex: 1, textAlign: 'right', fontSize: 11 }]}>{v}</Text>
+          </View>
+        ))}
+      </View>
+
+      <TouchableOpacity style={[ss.savBtn, { marginBottom: 12 }, saved && { backgroundColor: '#00a878' }]} onPress={save}>
+        <Text style={ss.savBtnTxt}>{saved ? '✓ Saved!' : 'Save Settings'}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={ss.clearLogBtn} onPress={clearAll}>
+        <Text style={ss.clearLogBtnTxt}>🗑️  Clear All Usage Logs</Text>
+      </TouchableOpacity>
+      <Text style={ss.disclaimer}>🔒 All credentials stored locally on your device only -- never sent to any third party.</Text>
+    </ScrollView>
+  );
+}
+
+// ─── TABS CONFIG ──────────────────────────────────────────
+const TABS = [
+  { id: 'library', emoji: '📚', label: 'Library' },
+  { id: 'ai',      emoji: '🤖', label: 'AI' },
+  { id: 'tools',   emoji: '🛠️', label: 'Tools' },
+  { id: 'history', emoji: '📋', label: 'History' },
+  { id: 'stats',   emoji: '📊', label: 'Stats' },
+  { id: 'settings',emoji: '⚙️', label: 'Settings' },
+];
+
+// ─── MAIN APP ─────────────────────────────────────────────
+export default function App() {
+  const [tab, setTab] = useState('library');
+  const [log, setLog] = useState([]);
+  const { toast, show: showToast } = useToast();
+
+  useEffect(() => { store.get(K.log, []).then(setLog); }, []);
+
+  const stats = { total: log.length, needsMod: log.filter(e => e.status === 'Needs Modification').length };
+
+  const addLog = async (entry) => {
+    const updated = [entry, ...log]; setLog(updated); await store.set(K.log, updated);
+  };
+  const updateLog = async (id, fields) => {
+    const updated = log.map(e => e.id === id ? { ...e, ...fields } : e);
+    setLog(updated); await store.set(K.log, updated);
+  };
+  const deleteLog = async (id) => {
+    const updated = log.filter(e => e.id !== id);
+    setLog(updated); await store.set(K.log, updated);
+  };
+  const refreshLog = async () => { const l = await store.get(K.log, []); setLog(l); };
+
+  return (
+    <SafeAreaView style={ss.root}>
+      <StatusBar barStyle="light-content" backgroundColor={C.header} />
+
+      {/* Header */}
+      <View style={ss.header}>
+        <View style={ss.headerLeft}>
+          <Text style={ss.headerLogo}>◈</Text>
+          <View>
+            <Text style={ss.headerTitle}>CryptoSupport v2</Text>
+            <Text style={ss.headerSub}>Quick Response Library</Text>
+          </View>
+        </View>
+        <View style={ss.headerStats}>
+          <View style={ss.hStat}><Text style={ss.hStatV}>{log.length}</Text><Text style={ss.hStatL}>Used</Text></View>
+          <View style={ss.hStat}><Text style={[ss.hStatV, { color: C.warn }]}>{stats.needsMod}</Text><Text style={ss.hStatL}>Fix</Text></View>
+        </View>
+      </View>
+
+      {/* Screen */}
+      <View style={{ flex: 1 }}>
+        {tab === 'library'  && <LibraryScreen  onLog={addLog} showToast={showToast} />}
+        {tab === 'ai'       && <AIScreen       showToast={showToast} />}
+        {tab === 'tools'    && <ToolsScreen    showToast={showToast} />}
+        {tab === 'history'  && <HistoryScreen  log={log} onUpdate={updateLog} onDelete={deleteLog} showToast={showToast} />}
+        {tab === 'stats'    && <StatsScreen    log={log} />}
+        {tab === 'settings' && <SettingsScreen showToast={showToast} onRefresh={refreshLog} />}
+      </View>
+
+      {/* Tab Bar */}
+      <View style={ss.tabBar}>
+        {TABS.map(t => (
+          <TouchableOpacity key={t.id} style={ss.tabBtn} onPress={() => setTab(t.id)}>
+            <Text style={ss.tabEmoji}>{t.emoji}</Text>
+            <Text style={[ss.tabLabel, tab === t.id && ss.tabLabelActive]}>{t.label}</Text>
+            {tab === t.id && <View style={ss.tabDot} />}
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <Toast toast={toast} />
+    </SafeAreaView>
+  );
+}
+
+// ─── STYLES ───────────────────────────────────────────────
+const ss = StyleSheet.create({
+  root:         { flex:1, backgroundColor:C.bg },
+  // Header
+  header:       { backgroundColor:C.header, paddingHorizontal:16, paddingVertical:11, flexDirection:'row', justifyContent:'space-between', alignItems:'center', borderBottomWidth:1, borderColor:C.border },
+  headerLeft:   { flexDirection:'row', alignItems:'center', gap:10 },
+  headerLogo:   { fontSize:22, color:C.accent },
+  headerTitle:  { color:C.white, fontSize:15, fontWeight:'700' },
+  headerSub:    { color:C.t3, fontSize:9, letterSpacing:0.5 },
+  headerStats:  { flexDirection:'row', gap:14 },
+  hStat:        { alignItems:'center' },
+  hStatV:       { color:C.white, fontSize:16, fontWeight:'800' },
+  hStatL:       { color:C.t3, fontSize:9, textTransform:'uppercase' },
+  // Tab Bar -- 6 tabs so smaller
+  tabBar:       { flexDirection:'row', backgroundColor:C.inputBg, borderTopWidth:1, borderColor:C.border, paddingBottom:4, paddingTop:5 },
+  tabBtn:       { flex:1, alignItems:'center', justifyContent:'center' },
+  tabEmoji:     { fontSize:16 },
+  tabLabel:     { color:C.t3, fontSize:9, fontWeight:'600', marginTop:1 },
+  tabLabelActive:{ color:C.accent },
+  tabDot:       { width:3, height:3, borderRadius:2, backgroundColor:C.accent, marginTop:2 },
+  // Price Ticker
+  tickerWrap:   { backgroundColor:C.card, borderBottomWidth:1, borderColor:C.border, paddingTop:8, paddingBottom:6 },
+  tickerHeader: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingHorizontal:14, marginBottom:2 },
+  tickerTitle:  { color:C.accent, fontSize:12, fontWeight:'700' },
+  tickerUpdated:{ color:C.t3, fontSize:9, paddingHorizontal:14, marginBottom:4 },
+  refreshBtn:   { paddingHorizontal:10, paddingVertical:3, borderRadius:8, borderWidth:1, borderColor:C.border },
+  refreshBtnTxt:{ color:C.t2, fontSize:11 },
+  tickerLoading:{ flexDirection:'row', alignItems:'center', gap:8, padding:10, backgroundColor:C.card, borderBottomWidth:1, borderColor:C.border },
+  tickerLoadTxt:{ color:C.t3, fontSize:12 },
+  tickerScroll: { paddingHorizontal:10 },
+  priceCard:    { backgroundColor:C.inputBg, borderRadius:12, padding:10, marginRight:8, alignItems:'center', minWidth:80, borderWidth:1, borderColor:C.border },
+  coinEmoji:    { fontSize:18, marginBottom:2 },
+  coinSymbol:   { color:C.t2, fontSize:10, fontWeight:'700', marginBottom:2 },
+  coinUsd:      { color:C.t1, fontSize:12, fontWeight:'700' },
+  coinInr:      { color:C.t3, fontSize:10, marginTop:1 },
+  changeBadge:  { borderRadius:6, paddingHorizontal:6, paddingVertical:2, marginTop:4 },
+  changeTxt:    { fontSize:10, fontWeight:'700' },
+  // Search
+  searchBar:    { flexDirection:'row', alignItems:'center', backgroundColor:C.card, marginHorizontal:14, marginTop:10, marginBottom:7, borderRadius:14, paddingHorizontal:14, borderWidth:1, borderColor:C.border },
+  searchIco:    { fontSize:14, marginRight:8 },
+  searchIn:     { flex:1, color:C.t1, fontSize:14, paddingVertical:11 },
+  clearBtn:     { color:C.t3, fontSize:16, paddingHorizontal:4 },
+  // Categories
+  catScroll:    { maxHeight:42 },
+  catScrollIn:  { paddingHorizontal:14, gap:7, alignItems:'center' },
+  catBtn:       { paddingHorizontal:12, paddingVertical:6, borderRadius:20, borderWidth:1, borderColor:C.border, backgroundColor:C.card },
+  catBtnOn:     { borderColor:C.accent, backgroundColor:C.accentDim },
+  catBtnTxt:    { color:C.t3, fontSize:11, fontWeight:'600' },
+  catBtnTxtOn:  { color:C.accent },
+  // List top row
+  listTopRow:   { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginHorizontal:14, marginTop:7, marginBottom:4 },
+  countTxt:     { color:C.t3, fontSize:11 },
+  newTplBtn:    { backgroundColor:C.accentDim, paddingHorizontal:14, paddingVertical:5, borderRadius:10, borderWidth:1, borderColor:C.accent },
+  newTplBtnTxt: { color:C.accent, fontSize:12, fontWeight:'700' },
+  // List
+  listIn:       { paddingHorizontal:14, paddingBottom:20, gap:10, paddingTop:4 },
+  emptyMini:    { padding:30, alignItems:'center' },
+  emptyMiniTxt: { color:C.t3, fontSize:13 },
+  // Card
+  card:         { backgroundColor:C.card, borderRadius:16, padding:13, borderWidth:1, borderColor:C.border },
+  customCard:   { borderColor:'#a78bfa44' },
+  cardHead:     { flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8 },
+  cardLeft:     { flexDirection:'row', alignItems:'flex-start', flex:1, gap:8 },
+  favBtn:       { paddingTop:2 },
+  favStar:      { fontSize:16, opacity:0.3 },
+  favStarOn:    { opacity:1 },
+  cardTitle:    { color:C.t1, fontSize:13, fontWeight:'700', marginBottom:2 },
+  cardCat:      { color:C.accent, fontSize:9, fontWeight:'600', textTransform:'uppercase', letterSpacing:0.5 },
+  cardBtns:     { flexDirection:'row', gap:6, alignItems:'center' },
+  editBtn:      { padding:5 },
+  editBtnTxt:   { fontSize:14 },
+  copyBtn:      { paddingHorizontal:12, paddingVertical:6, borderRadius:10, borderWidth:1, borderColor:C.accent, backgroundColor:C.accentDim },
+  copyBtnOn:    { backgroundColor:C.accent },
+  copyBtnTxt:   { color:C.accent, fontSize:11, fontWeight:'700' },
+  copyBtnTxtOn: { color:C.white },
+  cardPrev:     { color:C.t2, fontSize:12, lineHeight:18, marginBottom:7 },
+  tagRow:       { flexDirection:'row', flexWrap:'wrap', gap:4, alignItems:'center' },
+  tag:          { backgroundColor:C.inputBg, paddingHorizontal:7, paddingVertical:3, borderRadius:7 },
+  tagTxt:       { color:C.t3, fontSize:9 },
+  expandHint:   { color:C.t3, fontSize:9, marginLeft:'auto' },
+  deleteCustomBtn:{ marginTop:8, alignSelf:'flex-end' },
+  deleteCustomTxt:{ color:C.red, fontSize:11 },
+  // Toast
+  toast:        { position:'absolute', bottom:75, alignSelf:'center', paddingHorizontal:20, paddingVertical:10, borderRadius:24, elevation:8, shadowColor:'#000', shadowOffset:{width:0,height:4}, shadowOpacity:0.3, shadowRadius:8 },
+  toastTxt:     { color:C.white, fontWeight:'700', fontSize:13 },
+  // Modal
+  modalOv:      { flex:1, justifyContent:'flex-end', backgroundColor:'rgba(0,0,0,0.65)' },
+  modalSheet:   { backgroundColor:C.header, borderTopLeftRadius:24, borderTopRightRadius:24, padding:20, paddingBottom:36, borderTopWidth:2, borderColor:C.accent },
+  sheetHandle:  { width:40, height:4, backgroundColor:C.border, borderRadius:2, alignSelf:'center', marginBottom:16 },
+  sheetTitle:   { color:C.accent, fontSize:16, fontWeight:'700', marginBottom:4 },
+  sheetSub:     { color:C.t2, fontSize:12, marginBottom:10 },
+  sheetInput:   { backgroundColor:C.card, borderRadius:12, borderWidth:1, borderColor:C.border, color:C.t1, fontSize:13, paddingHorizontal:14, paddingVertical:11 },
+  sheetBtns:    { flexDirection:'row', gap:10, marginTop:16 },
+  savBtn:       { flex:2, backgroundColor:C.accent, borderRadius:14, paddingVertical:14, alignItems:'center' },
+  savBtnTxt:    { color:C.white, fontWeight:'700', fontSize:15 },
+  skipBtn:      { flex:1, backgroundColor:C.card, borderRadius:14, paddingVertical:14, alignItems:'center', borderWidth:1, borderColor:C.border },
+  skipBtnTxt:   { color:C.t2, fontSize:15 },
+  phLabel:      { color:C.blue, fontSize:12, fontWeight:'600', marginBottom:5 },
+  phHint:       { color:C.t3, fontSize:11, marginBottom:8, fontStyle:'italic' },
+  previewBox:   { backgroundColor:C.inputBg, borderRadius:12, padding:14, borderLeftWidth:3, borderLeftColor:C.accent },
+  previewTxt:   { color:C.t1, fontSize:13, lineHeight:20 },
+  // Status chips
+  statusChip:   { paddingHorizontal:12, paddingVertical:5, borderRadius:20, borderWidth:1, borderColor:C.border, marginRight:6 },
+  statusChipOn: { borderColor:C.accent, backgroundColor:C.accentDim },
+  statusChipTxt:{ color:C.t3, fontSize:10, fontWeight:'600' },
+  statusChipTxtOn:{ color:C.accent },
+  inputLbl:     { color:C.t3, fontSize:10, fontWeight:'700', textTransform:'uppercase', letterSpacing:0.5, marginBottom:6, marginTop:10 },
+  // AI
+  aiContent:    { padding:14, paddingBottom:40 },
+  infoBanner:   { backgroundColor:'#1e3a5f', borderRadius:12, padding:12, marginBottom:14 },
+  infoTxt:      { color:C.blue, fontSize:12, lineHeight:18 },
+  secLabel:     { color:C.t3, fontSize:10, fontWeight:'700', letterSpacing:1, textTransform:'uppercase', marginBottom:8 },
+  qChip:        { backgroundColor:C.card, borderWidth:1, borderColor:C.border, borderRadius:20, paddingHorizontal:13, paddingVertical:7, marginRight:8 },
+  qChipTxt:     { color:C.t2, fontSize:11 },
+  aiInput:      { backgroundColor:C.card, borderRadius:14, borderWidth:1, borderColor:C.border, color:C.t1, fontSize:13, padding:13, minHeight:90, lineHeight:19, marginBottom:12 },
+  aiSubmit:     { backgroundColor:C.accent, borderRadius:14, paddingVertical:14, alignItems:'center', marginBottom:16 },
+  aiSubmitTxt:  { color:C.white, fontWeight:'700', fontSize:14 },
+  resultBox:    { backgroundColor:C.card, borderRadius:16, padding:16, borderWidth:1, borderColor:C.accent+'44' },
+  resultHead:   { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:12 },
+  resultTitle:  { color:C.accent, fontWeight:'700', fontSize:13 },
+  resultTxt:    { color:C.t2, fontSize:13, lineHeight:20 },
+  // Tools
+  toolsContent: { padding:14, paddingBottom:50 },
+  toolTabRow:   { flexDirection:'row', gap:10, marginBottom:18 },
+  toolTab:      { flex:1, padding:13, backgroundColor:C.card, borderRadius:14, borderWidth:1, borderColor:C.border, alignItems:'center' },
+  toolTabOn:    { borderColor:C.accent, backgroundColor:C.accentDim },
+  toolTabTxt:   { color:C.t3, fontWeight:'700', fontSize:14 },
+  toolTabTxtOn: { color:C.accent },
+  toolTitle:    { color:C.t1, fontSize:16, fontWeight:'700', marginBottom:6 },
+  toolDesc:     { color:C.t2, fontSize:12, lineHeight:18, marginBottom:14 },
+  toolInput:    { backgroundColor:C.card, borderRadius:12, borderWidth:1, borderColor:C.border, color:C.t1, fontSize:13, paddingHorizontal:14, paddingVertical:12, marginBottom:12 },
+  toolSubmit:   { backgroundColor:C.accent, borderRadius:14, paddingVertical:14, alignItems:'center', marginBottom:14 },
+  toolSubmitTxt:{ color:C.white, fontWeight:'700', fontSize:14 },
+  networkRow:   { flexDirection:'row', flexWrap:'wrap', gap:8, marginBottom:12 },
+  networkBtn:   { paddingHorizontal:14, paddingVertical:7, borderRadius:20, borderWidth:1, borderColor:C.border, backgroundColor:C.card },
+  networkBtnOn: { borderColor:C.accent, backgroundColor:C.accentDim },
+  networkBtnTxt:{ color:C.t3, fontSize:12, fontWeight:'600' },
+  networkBtnTxtOn:{ color:C.accent },
+  errorBox:     { backgroundColor:C.red+'11', borderRadius:12, borderWidth:1, borderColor:C.red+'44', padding:14, marginBottom:12 },
+  errorTxt:     { color:C.red, fontSize:13, lineHeight:19 },
+  warnBanner:   { backgroundColor:C.warnDim, borderRadius:12, borderWidth:1, borderColor:C.warn+'44', padding:13, marginBottom:14 },
+  warnBannerTxt:{ color:C.warn, fontSize:12, lineHeight:18 },
+  resultCard:   { backgroundColor:C.card, borderRadius:16, padding:16, borderWidth:1, borderColor:C.border },
+  resultCardHead:{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:12 },
+  resultCardTitle:{ color:C.t1, fontWeight:'700', fontSize:14 },
+  txRow:        { flexDirection:'row', alignItems:'flex-start', gap:8, paddingVertical:9, borderBottomWidth:1, borderColor:C.border },
+  txLbl:        { color:C.t3, fontSize:12, width:100, flexShrink:0 },
+  txVal:        { color:C.t1, fontSize:12, fontWeight:'600', flex:1 },
+  confBarWrap:  { marginTop:14 },
+  confBarTrack: { height:8, backgroundColor:C.border, borderRadius:4, overflow:'hidden', marginBottom:5 },
+  confBarFill:  { height:'100%', borderRadius:4 },
+  confBarLbl:   { color:C.t2, fontSize:11, textAlign:'center' },
+  zdStatusRow:  { flexDirection:'row', gap:8, marginBottom:12, flexWrap:'wrap' },
+  zdStatusBadge:{ paddingHorizontal:10, paddingVertical:4, borderRadius:10, borderWidth:1 },
+  zdStatusTxt:  { fontSize:11, fontWeight:'700' },
+  zdDescBox:    { backgroundColor:C.inputBg, borderRadius:10, padding:12, marginTop:8 },
+  zdDescLabel:  { color:C.t3, fontSize:9, fontWeight:'700', letterSpacing:0.5, marginBottom:5 },
+  zdDescTxt:    { color:C.t2, fontSize:12, lineHeight:18 },
+  // History
+  filterScroll: { maxHeight:46, borderBottomWidth:1, borderColor:C.border },
+  filterIn:     { paddingHorizontal:14, paddingVertical:8, gap:7, alignItems:'center' },
+  entry:        { backgroundColor:C.card, borderRadius:16, padding:13, marginBottom:10, borderWidth:1, borderColor:C.border },
+  entryTop:     { flexDirection:'row', alignItems:'flex-start', marginBottom:8 },
+  entryTitle:   { color:C.t1, fontSize:13, fontWeight:'700', marginBottom:2 },
+  entryCat:     { color:C.accent, fontSize:9, fontWeight:'600', textTransform:'uppercase' },
+  delBtn:       { color:C.t3, fontSize:17, paddingLeft:8 },
+  fieldRow:     { flexDirection:'row', alignItems:'center', gap:8, marginBottom:8 },
+  fieldLbl:     { color:C.t3, fontSize:11, width:64 },
+  fieldIn:      { flex:1, backgroundColor:C.inputBg, borderRadius:10, borderWidth:1, borderColor:C.border, color:C.t1, fontSize:12, paddingHorizontal:11, paddingVertical:7 },
+  noteIn:       { backgroundColor:C.inputBg, borderRadius:10, borderWidth:1, borderColor:C.border, color:C.t1, fontSize:12, paddingHorizontal:11, paddingVertical:7, marginBottom:7, minHeight:36 },
+  entryTs:      { color:C.t3, fontSize:10, marginBottom:5 },
+  entryPrev:    { color:C.t3, fontSize:10, fontStyle:'italic', lineHeight:15 },
+  // Stats
+  statsContent: { padding:14, paddingBottom:40 },
+  statGrid:     { flexDirection:'row', flexWrap:'wrap', gap:10, marginBottom:16 },
+  statCard:     { flex:1, minWidth:'45%', backgroundColor:C.card, borderRadius:16, padding:15, alignItems:'center', borderWidth:1, borderColor:C.border },
+  statIcon:     { fontSize:22, marginBottom:5 },
+  statVal:      { fontSize:26, fontWeight:'800', marginBottom:3 },
+  statLbl:      { color:C.t3, fontSize:10, textTransform:'uppercase', letterSpacing:0.5, textAlign:'center' },
+  barRow:       { flexDirection:'row', alignItems:'center', gap:8, marginBottom:10 },
+  barLbl:       { color:C.t2, fontSize:11, width:82 },
+  barTrack:     { flex:1, height:7, backgroundColor:C.border, borderRadius:4, overflow:'hidden' },
+  barFill:      { height:'100%', backgroundColor:C.accent, borderRadius:4 },
+  barCount:     { color:C.t3, fontSize:12, width:20, textAlign:'right' },
+  stsRow:       { flexDirection:'row', alignItems:'center', gap:8, marginBottom:9 },
+  stsDot:       { width:9, height:9, borderRadius:5 },
+  stsLbl:       { color:C.t2, fontSize:11, width:125 },
+  stsTrack:     { flex:1, height:5, backgroundColor:C.border, borderRadius:3, overflow:'hidden' },
+  stsFill:      { height:'100%', borderRadius:3 },
+  stsCount:     { color:C.t1, fontSize:12, fontWeight:'600', width:22, textAlign:'right' },
+  // Settings
+  settingsContent:{ padding:14, paddingBottom:50 },
+  settCard:     { backgroundColor:C.card, borderRadius:16, padding:16, marginBottom:14, borderWidth:1, borderColor:C.border },
+  settCardTitle:{ color:C.t1, fontWeight:'700', fontSize:13, marginBottom:6 },
+  settIn:       { backgroundColor:C.inputBg, borderRadius:12, borderWidth:1, borderColor:C.border, color:C.t1, fontSize:13, paddingHorizontal:14, paddingVertical:10 },
+  keyRow:       { flexDirection:'row', gap:8, alignItems:'center' },
+  eyeBtn:       { backgroundColor:C.inputBg, borderRadius:12, borderWidth:1, borderColor:C.border, padding:10 },
+  linkTxt:      { color:C.blue, fontSize:11, marginTop:4, marginBottom:2 },
+  aboutRow:     { flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingVertical:9, borderBottomWidth:1, borderColor:C.border },
+  aboutLbl:     { color:C.t2, fontSize:13 },
+  aboutVal:     { color:C.t1, fontSize:13, fontWeight:'600' },
+  clearLogBtn:  { padding:13, borderRadius:14, borderWidth:1, borderColor:C.red+'66', backgroundColor:C.red+'11', alignItems:'center', marginBottom:20 },
+  clearLogBtnTxt:{ color:C.red, fontWeight:'600', fontSize:13 },
+  disclaimer:   { color:C.t3, fontSize:11, textAlign:'center', lineHeight:17, paddingHorizontal:10 },
+  // Empty
+  empty:        { flex:1, alignItems:'center', justifyContent:'center', padding:40, paddingTop:80 },
+  emptyEmoji:   { fontSize:48, marginBottom:14 },
+  emptyTitle:   { color:C.t1, fontSize:17, fontWeight:'700', marginBottom:7 },
+  emptyTxt:     { color:C.t3, fontSize:13, textAlign:'center', lineHeight:20 },
+});
