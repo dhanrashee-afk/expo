@@ -8,6 +8,8 @@
 
 ### 🐛 Bug fixes
 
+- Fix ESM/CJS compatibility errors being swallowed and add advice when switching to `.c[jt]s` or `.m[jt]s` makes sense to resolve the issue ([#43329](https://github.com/expo/expo/pull/43329) by [@kitten](https://github.com/kitten))
+
 ### 💡 Others
 
 ## 55.0.1 — 2026-02-20
