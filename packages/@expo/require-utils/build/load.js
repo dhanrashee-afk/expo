@@ -65,6 +65,16 @@ const tsExtensionMapping = {
   '.cts': '.cjs',
   '.mts': '.mjs'
 };
+function maybeReadFileSync(filename) {
+  try {
+    return _nodeFs().default.readFileSync(filename, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+}
 function toFormat(filename) {
   if (filename.endsWith('.cjs')) {
     return 'commonjs';
@@ -80,16 +90,6 @@ function toFormat(filename) {
     return 'typescript';
   } else {
     return undefined;
-  }
-}
-function isTypescriptFilename(filename) {
-  switch (toFormat(filename)) {
-    case 'module-typescript':
-    case 'commonjs-typescript':
-    case 'typescript':
-      return true;
-    default:
-      return false;
   }
 }
 function compileModule(code, filename, opts) {
@@ -174,7 +174,12 @@ function evalModule(code, filename, opts = {}) {
   } catch (error) {
     // If we have a diagnostic from TypeScript, we issue its error with a codeframe first,
     // since it's likely more useful than the eval error
-    throw (0, _codeframe().formatDiagnostic)(diagnostic) ?? (0, _codeframe().annotateError)(code, filename, error) ?? error;
+    const diagnosticError = (0, _codeframe().formatDiagnostic)(diagnostic);
+    if (diagnosticError) {
+      throw diagnosticError;
+    }
+    (0, _codeframe().addAdvice)(filename, error);
+    throw (0, _codeframe().annotateError)(code, filename, error) ?? error;
   }
 }
 async function requireOrImport(filename) {
@@ -200,13 +205,19 @@ async function loadModule(filename) {
  * NOTE: Requiring ESM has been added in all LTS versions (Node 20.19+, 22.12+, 24).
  * This already forms the minimum required Node version as of Expo SDK 54 */
 function loadModuleSync(filename) {
+  const format = toFormat(filename);
+  const isTypeScript = format === 'module-typescript' || format === 'commonjs-typescript' || format === 'typescript';
   try {
-    if (!isTypescriptFilename(filename)) {
+    if (!isTypeScript) {
       return require(filename);
     }
   } catch (error) {
     if (error.code === 'MODULE_NOT_FOUND') {
       throw error;
+    } else if (format == null) {
+      (0, _codeframe().addAdvice)(filename, error);
+      const code = maybeReadFileSync(filename);
+      throw (0, _codeframe().annotateError)(code, filename, error) || error;
     }
     // We fallback to always evaluating the entrypoint module
     // This is out of safety, since we're not trusting the requiring ESM feature
